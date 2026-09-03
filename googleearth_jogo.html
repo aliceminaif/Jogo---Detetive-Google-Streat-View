@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>O Detetive do Google Street View</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS for Satellite World Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Canvas Confetti Library -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Special+Elite&display=swap" rel="stylesheet">
+
+    <!-- Custom Light Mode & Game Styling -->
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            overflow-x: hidden;
+        }
+
+        .font-detective {
+            font-family: 'Special Elite', cursive, sans-serif;
+        }
+
+        /* Custom Leaflet Map Light/Satellite Container Styling */
+        .leaflet-container {
+            background-color: #e2e8f0 !important;
+            border-radius: 1rem;
+            cursor: crosshair !important;
+        }
+
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Pulse Animations for Markers */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.9; }
+            50% { transform: scale(1.2); opacity: 0.5; }
+            100% { transform: scale(0.95); opacity: 0.9; }
+        }
+
+        .custom-pin-target {
+            filter: drop-shadow(0 0 10px #16a34a);
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+
+        .custom-pin-guess {
+            filter: drop-shadow(0 0 10px #dc2626);
+        }
+
+        /* Custom Light Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Shimmer Loading Animation for Images */
+        .image-loading {
+            background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100 text-slate-800 selection:bg-amber-400 selection:text-slate-900">
+
+    <!-- Top Header Navigation Bar (Light Theme) -->
+    <header class="bg-white/95 border-b border-slate-200 backdrop-blur-md sticky top-0 z-40 px-4 py-3 shadow-sm">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- Logo & Title -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-white shadow-md shadow-amber-500/20 font-bold text-xl">
+                    <i class="fa-solid fa-magnifying-glass-location"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg md:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+                        O Detetive <span class="text-amber-600 font-detective">Street View</span>
+                    </h1>
+                    <p class="text-xs text-slate-500 hidden sm:block">Adivinhe o ponto turístico no mapa-múndi satélite!</p>
+                </div>
+            </div>
+
+            <!-- In-Game Stats Header (Visible during gameplay) -->
+            <div id="game-stats-bar" class="hidden flex items-center gap-3 md:gap-6 bg-slate-50 border border-slate-200 px-4 py-1.5 rounded-xl shadow-inner">
+                <!-- Player Name -->
+                <div class="flex items-center gap-2 text-xs md:text-sm">
+                    <i class="fa-solid fa-user-secret text-amber-600"></i>
+                    <span id="display-player-name" class="font-bold text-slate-800">Agente</span>
+                </div>
+
+                <!-- Difficulty Badge -->
+                <div id="display-difficulty-badge" class="px-2 py-0.5 rounded-md text-xs font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-300">
+                    Fácil
+                </div>
+
+                <!-- Round Tracker -->
+                <div class="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-700">
+                    <i class="fa-solid fa-flag-checkered text-slate-400"></i>
+                    <span>Rodada: <span id="current-round-text" class="text-amber-600 font-bold">1</span>/5</span>
+                </div>
+
+                <!-- Total Score -->
+                <div class="flex items-center gap-1.5 text-xs md:text-sm font-semibold text-slate-700">
+                    <i class="fa-solid fa-trophy text-amber-500"></i>
+                    <span><span id="total-score-text" class="text-emerald-600 font-extrabold text-base">0</span> pts</span>
+                </div>
+            </div>
+
+            <!-- Audio Toggle & Rules Button -->
+            <div class="flex items-center gap-2">
+                <button id="btn-toggle-sound" onclick="toggleSound()" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-amber-600 transition shadow-sm" title="Alternar Som">
+                    <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+                </button>
+                <button onclick="openRulesModal()" class="p-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs md:text-sm font-semibold text-slate-700 flex items-center gap-2 transition shadow-sm">
+                    <i class="fa-solid fa-circle-info text-amber-600"></i>
+                    <span class="hidden sm:inline">Regras</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER WITH DYNAMIC VIEWS -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6 flex flex-col justify-center">
+
+        <!-- VIEW 1: START SCREEN & PLAYER ENTRY (LIGHT MODE) -->
+        <section id="screen-start" class="max-w-xl mx-auto w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-xl my-auto">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 text-4xl mb-4 shadow-sm">
+                    <i class="fa-solid fa-user-detective"></i>
+                </div>
+                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Identificação do Detetive</h2>
+                <p class="text-sm text-slate-600 mt-2">Insira seu nome de agente e selecione o nível de dificuldade para começar a investigar os monumentos do planeta.</p>
+            </div>
+
+            <form id="start-form" onsubmit="startGame(event)" class="space-y-5">
+                <!-- Player Name Input -->
+                <div>
+                    <label for="player-name-input" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                        Nome do Jogador / Agente *
+                    </label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                            <i class="fa-solid fa-signature"></i>
+                        </span>
+                        <input type="text" id="player-name-input" required maxlength="18" placeholder="Ex: Sherlock Holmes" 
+                            class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-2 focus:ring-amber-500/20 transition font-medium">
+                    </div>
+                </div>
+
+                <!-- Difficulty Selection Buttons -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                        Nível de Dificuldade
+                    </label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <!-- Easy -->
+                        <button type="button" onclick="selectDifficulty('easy')" id="diff-btn-easy" class="diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-emerald-400 bg-emerald-50 text-emerald-900 font-bold transition shadow-sm">
+                            <span class="font-bold text-sm">Fácil</span>
+                            <span class="text-[10px] text-emerald-700 font-semibold mt-0.5"><i class="fa-regular fa-clock"></i> 30 seg</span>
+                            <span class="text-[9px] text-slate-500 mt-1 text-center font-normal">Muito Famosos</span>
+                        </button>
+                        <!-- Medium -->
+                        <button type="button" onclick="selectDifficulty('medium')" id="diff-btn-medium" class="diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition">
+                            <span class="font-bold text-sm">Médio</span>
+                            <span class="text-[10px] opacity-80 mt-0.5"><i class="fa-regular fa-clock"></i> 50 seg</span>
+                            <span class="text-[9px] text-slate-500 mt-1 text-center font-normal">Pouco Conhecidos</span>
+                        </button>
+                        <!-- Hard -->
+                        <button type="button" onclick="selectDifficulty('hard')" id="diff-btn-hard" class="diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition">
+                            <span class="font-bold text-sm">Difícil</span>
+                            <span class="text-[10px] opacity-80 mt-0.5"><i class="fa-regular fa-clock"></i> 1 min</span>
+                            <span class="text-[9px] text-slate-500 mt-1 text-center font-normal">Muito Pouco Conhecidos</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Scoring Rules Summary Box -->
+                <div class="bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs space-y-1.5 text-slate-700">
+                    <p class="font-bold text-amber-600 flex items-center gap-1.5">
+                        <i class="fa-solid fa-star text-amber-500"></i> Regras de Pontuação por Rodada:
+                    </p>
+                    <div class="grid grid-cols-3 gap-1.5 text-[11px] text-center pt-1">
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                            <span class="text-amber-600 font-bold block">+10 pts</span>
+                            <span class="text-[10px] text-slate-500">País Correto</span>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                            <span class="text-amber-600 font-bold block">+25 pts</span>
+                            <span class="text-[10px] text-slate-500">Cidade/Região</span>
+                        </div>
+                        <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                            <span class="text-amber-600 font-bold block">+15 bônus</span>
+                            <span class="text-[10px] text-slate-500">&lt; 15 km de distância</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Start Play Button -->
+                <button type="submit" class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500 text-white font-extrabold text-base shadow-lg shadow-amber-500/20 active:scale-[0.99] transition duration-150 flex items-center justify-center gap-2">
+                    <span>Iniciar Investigação</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </form>
+        </section>
+
+        <!-- VIEW 2: ACTIVE GAMEPLAY SCREEN (LIGHT MODE) -->
+        <section id="screen-gameplay" class="hidden flex flex-col lg:grid lg:grid-cols-12 gap-4 h-full">
+            
+            <!-- Left Panel: Landmark Photo Panel -->
+            <div class="lg:col-span-5 flex flex-col gap-3">
+                
+                <!-- Landmark Photo Card -->
+                <div class="relative bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xl flex-1 flex flex-col min-h-[280px] md:min-h-[340px]">
+                    
+                    <!-- Image Header Bar -->
+                    <div class="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
+                        <span class="bg-white/90 backdrop-blur-md text-amber-700 text-xs font-bold px-3 py-1.5 rounded-xl border border-amber-300 flex items-center gap-1.5 shadow">
+                            <i class="fa-solid fa-camera-retro text-amber-600"></i>
+                            <span id="photo-badge-tier">Ponto Turístico #1</span>
+                        </span>
+
+                        <!-- Timer Widget -->
+                        <div id="timer-box" class="bg-white/95 backdrop-blur-md text-slate-900 px-3 py-1.5 rounded-xl border border-slate-300 flex items-center gap-2 font-mono font-bold text-sm shadow">
+                            <i class="fa-regular fa-clock text-amber-600 animate-pulse"></i>
+                            <span id="timer-text" class="text-amber-600">00:30</span>
+                        </div>
+                    </div>
+
+                    <!-- Landmark Image Display with Loading Shimmer & Fallback Container -->
+                    <div class="relative w-full h-full flex-1 bg-slate-100 flex items-center justify-center group overflow-hidden image-loading" id="image-wrapper">
+                        <img id="landmark-image" src="" alt="Ponto Turístico" 
+                             onload="onImageLoaded()" 
+                             onerror="handleImageError()" 
+                             class="w-full h-64 lg:h-full object-cover transition-all duration-700 group-hover:scale-105 opacity-0">
+                        
+                        <!-- Image Error / Reload Fallback Overlay -->
+                        <div id="image-fallback-badge" class="hidden absolute inset-0 bg-slate-100 flex flex-col items-center justify-center p-4 text-center">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-500 text-3xl mb-2"></i>
+                            <span class="text-xs font-bold text-slate-700">Recarregando imagem do monumento...</span>
+                            <button onclick="retryLoadImage()" class="mt-3 text-xs bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-lg shadow transition">
+                                <i class="fa-solid fa-arrows-rotate mr-1"></i> Tentar Novamente
+                            </button>
+                        </div>
+
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900/40 via-transparent to-transparent pointer-events-none"></div>
+
+                        <!-- Zoom Image Button -->
+                        <button onclick="openImageModal()" class="absolute bottom-3 right-3 bg-white/90 hover:bg-white text-slate-800 p-2 px-3 rounded-xl text-xs font-bold backdrop-blur border border-slate-200 flex items-center gap-1.5 transition shadow">
+                            <i class="fa-solid fa-expand text-amber-600"></i> Ampliar Foto
+                        </button>
+                    </div>
+
+                    <!-- Hint / Instruction Footer -->
+                    <div class="bg-slate-50 px-4 py-2.5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                        <span class="flex items-center gap-1.5 font-medium">
+                            <i class="fa-solid fa-circle-question text-amber-500"></i>
+                            Examine a imagem e marque o local correto no mapa!
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Satellite Interactive Map -->
+            <div class="lg:col-span-7 flex flex-col gap-3">
+                <div class="relative bg-white border border-slate-200 rounded-2xl p-2 shadow-xl flex-1 flex flex-col min-h-[380px] lg:min-h-[500px]">
+                    
+                    <!-- Map Top Control Banner -->
+                    <div class="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl mb-2 border border-slate-200">
+                        <div class="flex items-center gap-2 text-xs font-bold text-slate-700">
+                            <i class="fa-solid fa-earth-americas text-emerald-600"></i>
+                            <span>Mapa-Múndi Satélite</span>
+                        </div>
+                        <span id="pin-status-text" class="text-xs text-amber-600 font-bold">
+                            <i class="fa-solid fa-location-dot"></i> Clique no mapa para posicionar seu pino!
+                        </span>
+                    </div>
+
+                    <!-- Leaflet Satellite Map Container -->
+                    <div id="satellite-map" class="w-full flex-1 rounded-xl z-0 min-h-[300px]"></div>
+
+                    <!-- Bottom Action Controls -->
+                    <div class="flex items-center justify-between gap-3 mt-3 px-1">
+                        <button id="btn-reset-pin" onclick="clearGuessMarker()" disabled class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40 disabled:hover:bg-slate-100 text-xs font-bold border border-slate-300 transition flex items-center gap-2">
+                            <i class="fa-solid fa-rotate-left"></i> Limpar Pino
+                        </button>
+
+                        <button id="btn-confirm-guess" onclick="submitGuess()" disabled class="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 text-white font-extrabold text-sm shadow-lg shadow-emerald-500/20 disabled:shadow-none transition duration-150 flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-check-circle text-base"></i>
+                            <span>Confirmar Palpite</span>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 3: ROUND REVEAL MODAL OVERLAY (LIGHT MODE) -->
+        <div id="modal-round-result" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/50 backdrop-blur-sm">
+            <div class="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-5 md:p-6 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                
+                <!-- Modal Title -->
+                <div class="text-center mb-4">
+                    <span id="result-badge-status" class="inline-block px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 mb-2">
+                        Resultado da Investigação
+                    </span>
+                    <h3 id="result-landmark-name" class="text-xl md:text-2xl font-bold text-slate-900">Cristo Redentor</h3>
+                    <p id="result-landmark-location" class="text-xs md:text-sm text-slate-500 font-medium">Rio de Janeiro, Brasil</p>
+                </div>
+
+                <!-- Result Satellite Map Preview -->
+                <div id="result-map" class="w-full h-52 md:h-64 rounded-2xl border border-slate-200 mb-4 bg-slate-100"></div>
+
+                <!-- Score Breakdown Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-center">
+                    <!-- Distance -->
+                    <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold block">Distância</span>
+                        <span id="res-distance" class="text-sm font-extrabold text-slate-800">0 km</span>
+                    </div>
+                    <!-- Country Bonus -->
+                    <div id="box-bonus-country" class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold block">País (+10)</span>
+                        <span id="res-country-status" class="text-xs font-bold text-rose-600"><i class="fa-solid fa-xmark"></i> Errou</span>
+                    </div>
+                    <!-- City Bonus -->
+                    <div id="box-bonus-city" class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold block">Cidade (+25)</span>
+                        <span id="res-city-status" class="text-xs font-bold text-rose-600"><i class="fa-solid fa-xmark"></i> Errou</span>
+                    </div>
+                    <!-- Proximity Bonus -->
+                    <div id="box-bonus-prox" class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                        <span class="text-[10px] text-slate-500 uppercase font-bold block">Próximo (&lt;15km)</span>
+                        <span id="res-prox-status" class="text-xs font-bold text-rose-600">+0 pts</span>
+                    </div>
+                </div>
+
+                <!-- Total Round Points Card -->
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center mb-5">
+                    <span class="text-xs text-amber-800 font-bold">Pontos Conquistados nesta Rodada:</span>
+                    <div class="text-2xl md:text-3xl font-extrabold text-amber-600 mt-0.5">
+                        +<span id="res-total-round-pts">0</span> <span class="text-sm font-semibold">pontos</span>
+                    </div>
+                </div>
+
+                <!-- Next Round Button -->
+                <button onclick="nextRound()" class="w-full py-3.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-sm shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-2">
+                    <span id="btn-next-text">Avançar para Próxima Rodada</span>
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+
+            </div>
+        </div>
+
+        <!-- VIEW 4: FINAL RANKING / LEADERBOARD SCREEN (LIGHT MODE) -->
+        <section id="screen-ranking" class="hidden max-w-3xl mx-auto w-full bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl my-auto">
+            
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 text-4xl mb-3 shadow-sm">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+                <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900">Ranking dos Detetives</h2>
+                <p class="text-xs md:text-sm text-slate-500 mt-1">Classificação oficial dos jogadores nesta sessão</p>
+            </div>
+
+            <!-- Current Player Final Score Banner -->
+            <div class="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 mb-6 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <span class="text-xs text-slate-500 font-semibold block">Sua Pontuação Final:</span>
+                    <span id="final-player-name" class="text-lg font-bold text-slate-900">Agente</span>
+                    <span id="final-player-title" class="text-xs text-amber-700 font-bold block mt-0.5">Detetive Mestre</span>
+                </div>
+                <div class="text-right">
+                    <span id="final-player-score" class="text-3xl font-extrabold text-emerald-600">0</span>
+                    <span class="text-xs text-slate-500 font-semibold block">pontos acumulados</span>
+                </div>
+            </div>
+
+            <!-- Leaderboard Table Container -->
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden mb-6 shadow-sm">
+                <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600 uppercase tracking-wider">
+                    <span>Posição & Nome</span>
+                    <div class="flex gap-8">
+                        <span>Dificuldade</span>
+                        <span>Pontos</span>
+                    </div>
+                </div>
+
+                <div id="ranking-list-container" class="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                    <!-- Dynamic ranking rows injected here -->
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-col sm:flex-row gap-3">
+                <button onclick="resetGameToStart()" class="flex-1 py-3.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-sm shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>Próximo Jogador / Jogar Novamente</span>
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: IMAGE ENLARGEMENT -->
+    <div id="modal-image-zoom" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md" onclick="closeImageModal()">
+        <div class="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center justify-center" onclick="event.stopPropagation()">
+            <button onclick="closeImageModal()" class="absolute -top-10 right-0 text-white hover:text-slate-200 text-xl font-bold bg-slate-800 border border-slate-600 w-8 h-8 rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <img id="modal-zoomed-image" src="" alt="Ampliada" class="max-w-full max-h-[85vh] rounded-2xl border border-slate-200 shadow-2xl object-contain bg-white">
+        </div>
+    </div>
+
+    <!-- MODAL: RULES EXPLANATION -->
+    <div id="modal-rules" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div class="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl text-slate-800">
+            <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-book-bookmark text-amber-600"></i>
+                    Regras do Jogo
+                </h3>
+                <button onclick="closeRulesModal()" class="text-slate-400 hover:text-slate-700">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-600 leading-relaxed">
+                <p>🔎 <strong>Objetivo:</strong> Identifique onde fica o ponto turístico mostrado na foto marcando um pino no mapa-múndi satélite antes do tempo acabar.</p>
+                <hr class="border-slate-200">
+                <p>⏱️ <strong>Dificuldades & Tempo:</strong></p>
+                <ul class="list-disc pl-4 space-y-1 text-slate-600">
+                    <li><strong class="text-emerald-700">Fácil:</strong> 30 segundos (Pontos ultra conhecidos).</li>
+                    <li><strong class="text-amber-700">Médio:</strong> 50 segundos (Pontos não muito conhecidos).</li>
+                    <li><strong class="text-rose-700">Difícil:</strong> 1 minuto (Pontos muito pouco conhecidos).</li>
+                </ul>
+                <hr class="border-slate-200">
+                <p>💯 <strong>Sistema de Pontuação:</strong></p>
+                <ul class="list-disc pl-4 space-y-1 text-slate-600">
+                    <li><strong>País Correto:</strong> +10 pontos bônus</li>
+                    <li><strong>Cidade/Região Correta:</strong> +25 pontos bônus</li>
+                    <li><strong>Palpite Mais Próximo (&lt; 15 km):</strong> +15 pontos bônus</li>
+                    <li><strong>Aproximação:</strong> Até 50 pontos extras de precisão.</li>
+                </ul>
+                <hr class="border-slate-200">
+                <p>🏆 <strong>Ranking:</strong> Quem acumular mais pontos após 5 rodadas vence!</p>
+            </div>
+
+            <button onclick="closeRulesModal()" class="w-full mt-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition shadow">
+                Entendi, Fechar
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ==========================================================================
+           1. LANDMARK DATABASE WITH CURATED SPECIFIC LANDMARK PHOTOS ONLY
+           ========================================================================== */
+        const LANDMARKS_DATABASE = {
+            easy: [
+                {
+                    name: "Cristo Redentor",
+                    city: "Rio de Janeiro",
+                    country: "Brasil",
+                    lat: -22.9519,
+                    lng: -43.2105,
+                    countryRadiusKm: 1500,
+                    cityRadiusKm: 70,
+                    image: "https://images.unsplash.com/photo-1516306580123-e6e52b1b7b5f?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/4/4f/Christ_the_Redeemer_-_Rio_de_Janeiro%2C_Brazil.jpg"
+                },
+                {
+                    name: "Torre Eiffel",
+                    city: "Paris",
+                    country: "França",
+                    lat: 48.8584,
+                    lng: 2.2945,
+                    countryRadiusKm: 500,
+                    cityRadiusKm: 50,
+                    image: "https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/a/a8/Eiffel_Tower_from_another_angle.jpg"
+                },
+                {
+                    name: "Estátua da Liberdade",
+                    city: "Nova York",
+                    country: "Estados Unidos",
+                    lat: 40.6892,
+                    lng: -74.0445,
+                    countryRadiusKm: 2500,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1605130284535-11dd9dedc584?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/d/dd/Lady_Liberty_under_a_blue_sky_%28Unsplash%29.jpg"
+                },
+                {
+                    name: "Coliseu",
+                    city: "Roma",
+                    country: "Itália",
+                    lat: 41.8902,
+                    lng: 12.4922,
+                    countryRadiusKm: 600,
+                    cityRadiusKm: 50,
+                    image: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/d/de/Colosseo_2020.jpg"
+                },
+                {
+                    name: "Taj Mahal",
+                    city: "Agra",
+                    country: "Índia",
+                    lat: 27.1751,
+                    lng: 78.0421,
+                    countryRadiusKm: 1200,
+                    cityRadiusKm: 80,
+                    image: "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/1/1d/Taj_Mahal_2012.jpg"
+                },
+                {
+                    name: "Big Ben",
+                    city: "Londres",
+                    country: "Reino Unido",
+                    lat: 51.5007,
+                    lng: -0.1246,
+                    countryRadiusKm: 450,
+                    cityRadiusKm: 50,
+                    image: "https://images.unsplash.com/photo-1529655683826-aba9b3e77383?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/b/b5/Elizabeth_Tower_Big_Ben_London_October_2022.jpg"
+                },
+                {
+                    name: "Pirâmides de Gizé",
+                    city: "Gizé",
+                    country: "Egito",
+                    lat: 29.9792,
+                    lng: 31.1342,
+                    countryRadiusKm: 800,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1503177119275-0aa32b3a9368?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/a/af/All_Gizah_Pyramids.jpg"
+                },
+                {
+                    name: "Muralha da China",
+                    city: "Pequim",
+                    country: "China",
+                    lat: 40.4319,
+                    lng: 116.5704,
+                    countryRadiusKm: 1800,
+                    cityRadiusKm: 100,
+                    image: "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/2/23/The_Great_Wall_of_China_at_Jinshanling-edit.jpg"
+                }
+            ],
+            medium: [
+                {
+                    name: "Machu Picchu",
+                    city: "Cusco",
+                    country: "Peru",
+                    lat: -13.1631,
+                    lng: -72.5450,
+                    countryRadiusKm: 700,
+                    cityRadiusKm: 90,
+                    image: "https://images.unsplash.com/photo-1526392060635-9d6019884377?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/e/eb/Machu_Picchu%2C_Peru.jpg"
+                },
+                {
+                    name: "Chichén Itzá",
+                    city: "Yucatán",
+                    country: "México",
+                    lat: 20.6843,
+                    lng: -88.5678,
+                    countryRadiusKm: 1000,
+                    cityRadiusKm: 100,
+                    image: "https://images.unsplash.com/photo-1518638150340-f706e86654de?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/5/51/Chichen_Itza_3.jpg"
+                },
+                {
+                    name: "Petra",
+                    city: "Ma'an",
+                    country: "Jordânia",
+                    lat: 30.3285,
+                    lng: 35.4444,
+                    countryRadiusKm: 300,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1579606030852-9f310e927008?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/2/20/Petra_Jordan_BW_21.jpg"
+                },
+                {
+                    name: "Hagia Sophia",
+                    city: "Istambul",
+                    country: "Turquia",
+                    lat: 41.0086,
+                    lng: 28.9802,
+                    countryRadiusKm: 700,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/2/22/Hagia_Sophia_Mars_2013.jpg"
+                },
+                {
+                    name: "Ópera de Sydney",
+                    city: "Sydney",
+                    country: "Austrália",
+                    lat: -33.8568,
+                    lng: 151.2153,
+                    countryRadiusKm: 2000,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1624138784614-87fd1b6528f8?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/a/a0/Sydney_Australia._%2821339175489%29.jpg"
+                },
+                {
+                    name: "Castelo de Neuschwanstein",
+                    city: "Baviera",
+                    country: "Alemanha",
+                    lat: 47.5576,
+                    lng: 10.7498,
+                    countryRadiusKm: 500,
+                    cityRadiusKm: 80,
+                    image: "https://images.unsplash.com/photo-1534313314376-a72289b6181e?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/f/f8/Schloss_Neuschwanstein_2013.jpg"
+                },
+                {
+                    name: "Monte Fuji",
+                    city: "Shizuoka",
+                    country: "Japão",
+                    lat: 35.3606,
+                    lng: 138.7274,
+                    countryRadiusKm: 500,
+                    cityRadiusKm: 80,
+                    image: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/1/1b/Mount_Fuji_from_Motosu.JPG"
+                },
+                {
+                    name: "Moais da Ilha de Páscoa",
+                    city: "Valparaíso",
+                    country: "Chile",
+                    lat: -27.1127,
+                    lng: -109.3497,
+                    countryRadiusKm: 1200,
+                    cityRadiusKm: 50,
+                    image: "https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/a/a2/Ahu_Tongariki.jpg"
+                }
+            ],
+            hard: [
+                {
+                    name: "Sigiriya (A Rocha do Leão)",
+                    city: "Matale",
+                    country: "Sri Lanka",
+                    lat: 7.9570,
+                    lng: 80.7603,
+                    countryRadiusKm: 250,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1586861635167-e5223aadc9fe?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/4/4c/Sigiriya_Rock_from_distance.jpg"
+                },
+                {
+                    name: "Monastérios de Meteora",
+                    city: "Kalambaka",
+                    country: "Grécia",
+                    lat: 39.7217,
+                    lng: 21.6306,
+                    countryRadiusKm: 400,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1568733980512-32b07d570533?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/5/5b/Meteora_Monastery_Rousanou_01.jpg"
+                },
+                {
+                    name: "Mont Saint-Michel",
+                    city: "Normandia",
+                    country: "França",
+                    lat: 48.6361,
+                    lng: -1.5115,
+                    countryRadiusKm: 500,
+                    cityRadiusKm: 70,
+                    image: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/d/d1/Mont-Saint-Michel_le_soir.jpg"
+                },
+                {
+                    name: "Igreja da Ilha de Bled",
+                    city: "Bled",
+                    country: "Eslovênia",
+                    lat: 46.3625,
+                    lng: 14.0904,
+                    countryRadiusKm: 200,
+                    cityRadiusKm: 40,
+                    image: "https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/b/b3/Bled_Island.jpg"
+                },
+                {
+                    name: "Torii Flutuante de Miyajima",
+                    city: "Hatsukaichi",
+                    country: "Japão",
+                    lat: 34.2959,
+                    lng: 132.3197,
+                    countryRadiusKm: 500,
+                    cityRadiusKm: 60,
+                    image: "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/e/eb/Itsukushima_Torii_4.jpg"
+                },
+                {
+                    name: "Templo de Prambanan",
+                    city: "Yogyakarta",
+                    country: "Indonésia",
+                    lat: -7.7520,
+                    lng: 110.4915,
+                    countryRadiusKm: 1000,
+                    cityRadiusKm: 70,
+                    image: "https://images.unsplash.com/photo-1596402184320-417e7178b2cd?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/1/1a/Prambanan_Temple_Complex.jpg"
+                },
+                {
+                    name: "Poço de Chand Baori",
+                    city: "Abhaneri",
+                    country: "Índia",
+                    lat: 27.0072,
+                    lng: 76.6062,
+                    countryRadiusKm: 1000,
+                    cityRadiusKm: 80,
+                    image: "https://images.unsplash.com/photo-1590050752117-238cb0fb12b1?w=1000&auto=format&fit=crop&q=80",
+                    fallbackImage: "https://upload.wikimedia.org/wikipedia/commons/3/36/Chand_Baori_Stepwell_Abhaneri.jpg"
+                }
+            ]
+        };
+
+        /* ==========================================================================
+           2. SOUND SYNTHESIS ENGINE (Web Audio API)
+           ========================================================================== */
+        let soundEnabled = true;
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('sound-icon');
+            if (soundEnabled) {
+                icon.className = 'fa-solid fa-volume-high';
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-slate-400';
+            }
+        }
+
+        // Fanfare FX for good guesses
+        function playSuccessApplauseSound() {
+            if (!soundEnabled) return;
+            const ctx = getAudioContext();
+            if (!ctx) return;
+
+            const now = ctx.currentTime;
+
+            // Arpeggio Fanfare
+            const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+            notes.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+
+                gain.gain.setValueAtTime(0.2, now + idx * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.4);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start(now + idx * 0.1);
+                osc.stop(now + idx * 0.1 + 0.4);
+            });
+        }
+
+        // Disappointed / Fail Sound for missed guesses
+        function playFailSound() {
+            if (!soundEnabled) return;
+            const ctx = getAudioContext();
+            if (!ctx) return;
+
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.exponentialRampToValueAtTime(110, now + 0.5);
+
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+
+        /* ==========================================================================
+           3. GAME STATE MANAGEMENT
+           ========================================================================== */
+        let gameState = {
+            playerName: "Agente",
+            difficulty: "easy",
+            currentRound: 1,
+            totalRounds: 5,
+            totalScore: 0,
+            roundTimeLimit: 30,
+            timeRemaining: 30,
+            timerInterval: null,
+            roundLandmarks: [],
+            currentLandmark: null,
+            userGuessCoords: null,
+            map: null,
+            guessMarker: null,
+            resultMap: null,
+            imageAttempts: 0
+        };
+
+        let leaderboardData = [];
+
+        /* ==========================================================================
+           4. IMAGE LOADING & FALLBACK CONTROLLER
+           ========================================================================== */
+        function onImageLoaded() {
+            const imgEl = document.getElementById('landmark-image');
+            const wrapper = document.getElementById('image-wrapper');
+            const badge = document.getElementById('image-fallback-badge');
+            
+            wrapper.classList.remove('image-loading');
+            imgEl.classList.remove('opacity-0');
+            badge.classList.add('hidden');
+        }
+
+        function handleImageError() {
+            const imgEl = document.getElementById('landmark-image');
+            const badge = document.getElementById('image-fallback-badge');
+
+            gameState.imageAttempts++;
+
+            if (gameState.imageAttempts === 1 && gameState.currentLandmark && gameState.currentLandmark.fallbackImage) {
+                // Load specific landmark fallback image from Wikimedia (Never a generic photo!)
+                imgEl.src = gameState.currentLandmark.fallbackImage;
+            } else {
+                // If network fails to load both sources, display retry overlay for the user
+                badge.classList.remove('hidden');
+            }
+        }
+
+        function retryLoadImage() {
+            if (!gameState.currentLandmark) return;
+            gameState.imageAttempts = 0;
+            const imgEl = document.getElementById('landmark-image');
+            document.getElementById('image-wrapper').classList.add('image-loading');
+            document.getElementById('image-fallback-badge').classList.add('hidden');
+            imgEl.src = gameState.currentLandmark.image + '&t=' + Date.now();
+        }
+
+        /* ==========================================================================
+           5. LEAFLET SATELLITE MAP INITIALIZATION
+           ========================================================================== */
+        function initMainMap() {
+            if (gameState.map) return;
+
+            gameState.map = L.map('satellite-map', {
+                center: [20, 0],
+                zoom: 2,
+                minZoom: 2,
+                maxZoom: 18,
+                worldCopyJump: true
+            });
+
+            // ESRI World Imagery Satellite Tiles
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri'
+            }).addTo(gameState.map);
+
+            gameState.map.on('click', function(e) {
+                placeGuessMarker(e.latlng.lat, e.latlng.lng);
+            });
+        }
+
+        function placeGuessMarker(lat, lng) {
+            gameState.userGuessCoords = { lat, lng };
+
+            const guessIcon = L.divIcon({
+                className: 'custom-pin-guess',
+                html: `<div style="color: #dc2626; font-size: 30px; text-shadow: 0 0 8px rgba(0,0,0,0.5);"><i class="fa-solid fa-location-dot"></i></div>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 30]
+            });
+
+            if (gameState.guessMarker) {
+                gameState.guessMarker.setLatLng([lat, lng]);
+            } else {
+                gameState.guessMarker = L.marker([lat, lng], { icon: guessIcon }).addTo(gameState.map);
+            }
+
+            document.getElementById('btn-confirm-guess').disabled = false;
+            document.getElementById('btn-reset-pin').disabled = false;
+            document.getElementById('pin-status-text').innerHTML = `<span class="text-emerald-600 font-bold"><i class="fa-solid fa-check"></i> Pino posicionado! Clique em Confirmar.</span>`;
+        }
+
+        function clearGuessMarker() {
+            if (gameState.guessMarker) {
+                gameState.map.removeLayer(gameState.guessMarker);
+                gameState.guessMarker = null;
+            }
+            gameState.userGuessCoords = null;
+            document.getElementById('btn-confirm-guess').disabled = true;
+            document.getElementById('btn-reset-pin').disabled = true;
+            document.getElementById('pin-status-text').innerHTML = `<i class="fa-solid fa-location-dot"></i> Clique no mapa para posicionar seu pino!`;
+        }
+
+        /* ==========================================================================
+           6. GAME MECHANICS & LOGIC
+           ========================================================================== */
+        function selectDifficulty(diff) {
+            gameState.difficulty = diff;
+            
+            document.querySelectorAll('.diff-btn').forEach(btn => {
+                btn.className = 'diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition';
+            });
+
+            const activeBtn = document.getElementById(`diff-btn-${diff}`);
+            if (diff === 'easy') {
+                activeBtn.className = 'diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-emerald-400 bg-emerald-50 text-emerald-900 font-bold transition shadow-sm';
+            } else if (diff === 'medium') {
+                activeBtn.className = 'diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-amber-400 bg-amber-50 text-amber-900 font-bold transition shadow-sm';
+            } else {
+                activeBtn.className = 'diff-btn flex flex-col items-center justify-center p-3 rounded-xl border border-rose-400 bg-rose-50 text-rose-900 font-bold transition shadow-sm';
+            }
+        }
+
+        function startGame(event) {
+            event.preventDefault();
+            const nameInput = document.getElementById('player-name-input').value.trim();
+            if (!nameInput) return;
+
+            gameState.playerName = nameInput;
+            gameState.currentRound = 1;
+            gameState.totalScore = 0;
+
+            if (gameState.difficulty === 'easy') {
+                gameState.roundTimeLimit = 30;
+            } else if (gameState.difficulty === 'medium') {
+                gameState.roundTimeLimit = 50;
+            } else {
+                gameState.roundTimeLimit = 60;
+            }
+
+            const pool = [...LANDMARKS_DATABASE[gameState.difficulty]];
+            pool.sort(() => Math.random() - 0.5);
+            gameState.roundLandmarks = pool.slice(0, 5);
+
+            document.getElementById('display-player-name').innerText = gameState.playerName;
+            const diffBadge = document.getElementById('display-difficulty-badge');
+            
+            if (gameState.difficulty === 'easy') {
+                diffBadge.innerText = 'Fácil';
+                diffBadge.className = 'px-2 py-0.5 rounded-md text-xs font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300';
+            } else if (gameState.difficulty === 'medium') {
+                diffBadge.innerText = 'Médio';
+                diffBadge.className = 'px-2 py-0.5 rounded-md text-xs font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300';
+            } else {
+                diffBadge.innerText = 'Difícil';
+                diffBadge.className = 'px-2 py-0.5 rounded-md text-xs font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300';
+            }
+
+            document.getElementById('screen-start').classList.add('hidden');
+            document.getElementById('game-stats-bar').classList.remove('hidden');
+            document.getElementById('screen-gameplay').classList.remove('hidden');
+
+            setTimeout(() => {
+                initMainMap();
+                gameState.map.invalidateSize();
+                startRound();
+            }, 100);
+        }
+
+        function startRound() {
+            clearInterval(gameState.timerInterval);
+            clearGuessMarker();
+
+            gameState.currentLandmark = gameState.roundLandmarks[gameState.currentRound - 1];
+            gameState.imageAttempts = 0;
+
+            document.getElementById('current-round-text').innerText = gameState.currentRound;
+            document.getElementById('total-score-text').innerText = gameState.totalScore;
+            document.getElementById('photo-badge-tier').innerText = `Ponto Turístico #${gameState.currentRound}`;
+
+            // Reset image container state
+            const imgEl = document.getElementById('landmark-image');
+            const wrapper = document.getElementById('image-wrapper');
+            const badge = document.getElementById('image-fallback-badge');
+            
+            imgEl.classList.add('opacity-0');
+            wrapper.classList.add('image-loading');
+            badge.classList.add('hidden');
+
+            imgEl.src = gameState.currentLandmark.image;
+
+            if (gameState.map) {
+                gameState.map.setView([20, 0], 2);
+            }
+
+            gameState.timeRemaining = gameState.roundTimeLimit;
+            updateTimerDisplay();
+
+            gameState.timerInterval = setInterval(() => {
+                gameState.timeRemaining--;
+                updateTimerDisplay();
+
+                if (gameState.timeRemaining <= 0) {
+                    clearInterval(gameState.timerInterval);
+                    submitGuess(true);
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(gameState.timeRemaining / 60);
+            const seconds = gameState.timeRemaining % 60;
+            const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            
+            const timerText = document.getElementById('timer-text');
+            const timerBox = document.getElementById('timer-box');
+            timerText.innerText = formatted;
+
+            if (gameState.timeRemaining <= 10) {
+                timerBox.className = "bg-rose-100 backdrop-blur-md text-rose-800 px-3 py-1.5 rounded-xl border border-rose-300 flex items-center gap-2 font-mono font-bold text-sm shadow animate-bounce";
+            } else {
+                timerBox.className = "bg-white/95 backdrop-blur-md text-slate-900 px-3 py-1.5 rounded-xl border border-slate-300 flex items-center gap-2 font-mono font-bold text-sm shadow";
+            }
+        }
+
+        /* ==========================================================================
+           7. HAVERSINE DISTANCE & SCORING CALCULATIONS
+           ========================================================================== */
+        function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            return Math.round(R * c);
+        }
+
+        function submitGuess(isTimeout = false) {
+            clearInterval(gameState.timerInterval);
+
+            const landmark = gameState.currentLandmark;
+            let distance = 20000;
+            let guessCoords = gameState.userGuessCoords;
+
+            if (!guessCoords) {
+                guessCoords = { lat: 0, lng: 0 };
+            } else {
+                distance = calculateHaversineDistance(guessCoords.lat, guessCoords.lng, landmark.lat, landmark.lng);
+            }
+
+            const isCountryCorrect = distance <= landmark.countryRadiusKm;
+            const countryPts = isCountryCorrect ? 10 : 0;
+
+            const isCityCorrect = distance <= landmark.cityRadiusKm;
+            const cityPts = isCityCorrect ? 25 : 0;
+
+            const isProximityBonus = distance <= 15;
+            const proxPts = isProximityBonus ? 15 : 0;
+
+            let distanceBasePts = 0;
+            if (distance <= 5) distanceBasePts = 50;
+            else if (distance <= 50) distanceBasePts = 40;
+            else if (distance <= 200) distanceBasePts = 30;
+            else if (distance <= 500) distanceBasePts = 20;
+            else if (distance <= 1000) distanceBasePts = 10;
+
+            const totalRoundPoints = countryPts + cityPts + proxPts + distanceBasePts;
+            gameState.totalScore += totalRoundPoints;
+
+            showRoundResultModal(landmark, guessCoords, distance, isCountryCorrect, isCityCorrect, isProximityBonus, totalRoundPoints);
+        }
+
+        function showRoundResultModal(landmark, guessCoords, distance, isCountry, isCity, isProx, totalPts) {
+            document.getElementById('result-landmark-name').innerText = landmark.name;
+            document.getElementById('result-landmark-location').innerText = `${landmark.city}, ${landmark.country}`;
+            document.getElementById('res-distance').innerText = `${distance.toLocaleString('pt-BR')} km`;
+            document.getElementById('res-total-round-pts').innerText = totalPts;
+
+            const cBox = document.getElementById('box-bonus-country');
+            const cStat = document.getElementById('res-country-status');
+            if (isCountry) {
+                cStat.innerHTML = `<i class="fa-solid fa-check"></i> +10 pts`;
+                cStat.className = "text-xs font-bold text-emerald-700";
+                cBox.className = "bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl";
+            } else {
+                cStat.innerHTML = `<i class="fa-solid fa-xmark"></i> Errou`;
+                cStat.className = "text-xs font-bold text-rose-600";
+                cBox.className = "bg-slate-50 border border-slate-200 p-2.5 rounded-xl";
+            }
+
+            const ctBox = document.getElementById('box-bonus-city');
+            const ctStat = document.getElementById('res-city-status');
+            if (isCity) {
+                ctStat.innerHTML = `<i class="fa-solid fa-check"></i> +25 pts`;
+                ctStat.className = "text-xs font-bold text-emerald-700";
+                ctBox.className = "bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl";
+            } else {
+                ctStat.innerHTML = `<i class="fa-solid fa-xmark"></i> Errou`;
+                ctStat.className = "text-xs font-bold text-rose-600";
+                ctBox.className = "bg-slate-50 border border-slate-200 p-2.5 rounded-xl";
+            }
+
+            const pBox = document.getElementById('box-bonus-prox');
+            const pStat = document.getElementById('res-prox-status');
+            if (isProx) {
+                pStat.innerHTML = `<i class="fa-solid fa-star"></i> +15 bônus`;
+                pStat.className = "text-xs font-bold text-amber-700";
+                pBox.className = "bg-amber-50 border border-amber-300 p-2.5 rounded-xl";
+            } else {
+                pStat.innerHTML = `+0 pts`;
+                pStat.className = "text-xs font-bold text-slate-400";
+                pBox.className = "bg-slate-50 border border-slate-200 p-2.5 rounded-xl";
+            }
+
+            if (totalPts >= 25 || isCountry || isCity) {
+                playSuccessApplauseSound();
+                if (typeof confetti === 'function') {
+                    confetti({
+                        particleCount: 80,
+                        spread: 70,
+                        origin: { y: 0.6 }
+                    });
+                }
+            } else {
+                playFailSound();
+            }
+
+            const btnNext = document.getElementById('btn-next-text');
+            if (gameState.currentRound >= gameState.totalRounds) {
+                btnNext.innerText = "Ver Ranking Final dos Jogadores";
+            } else {
+                btnNext.innerText = "Avançar para Próxima Rodada";
+            }
+
+            document.getElementById('modal-round-result').classList.remove('hidden');
+
+            setTimeout(() => {
+                renderResultMap(landmark, guessCoords);
+            }, 150);
+        }
+
+        function renderResultMap(landmark, guessCoords) {
+            if (gameState.resultMap) {
+                gameState.resultMap.remove();
+                gameState.resultMap = null;
+            }
+
+            gameState.resultMap = L.map('result-map', {
+                zoomControl: false,
+                attributionControl: false
+            });
+
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 18
+            }).addTo(gameState.resultMap);
+
+            const targetIcon = L.divIcon({
+                className: 'custom-pin-target',
+                html: `<div style="color: #16a34a; font-size: 32px; text-shadow: 0 0 10px rgba(255,255,255,0.9);"><i class="fa-solid fa-location-dot"></i></div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 32]
+            });
+
+            const targetMarker = L.marker([landmark.lat, landmark.lng], { icon: targetIcon })
+                .addTo(gameState.resultMap)
+                .bindPopup(`<b>${landmark.name}</b><br>${landmark.city}, ${landmark.country}`)
+                .openPopup();
+
+            const guessIcon = L.divIcon({
+                className: 'custom-pin-guess',
+                html: `<div style="color: #dc2626; font-size: 28px; text-shadow: 0 0 8px rgba(255,255,255,0.8);"><i class="fa-solid fa-location-dot"></i></div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 28]
+            });
+
+            const userMarker = L.marker([guessCoords.lat, guessCoords.lng], { icon: guessIcon }).addTo(gameState.resultMap);
+
+            L.polyline([
+                [guessCoords.lat, guessCoords.lng],
+                [landmark.lat, landmark.lng]
+            ], {
+                color: '#d97706',
+                weight: 3,
+                dashArray: '6, 8',
+                opacity: 0.9
+            }).addTo(gameState.resultMap);
+
+            const group = L.featureGroup([targetMarker, userMarker]);
+            gameState.resultMap.fitBounds(group.getBounds().pad(0.3));
+        }
+
+        function nextRound() {
+            document.getElementById('modal-round-result').classList.add('hidden');
+
+            if (gameState.currentRound < gameState.totalRounds) {
+                gameState.currentRound++;
+                startRound();
+            } else {
+                showFinalRankingScreen();
+            }
+        }
+
+        /* ==========================================================================
+           8. LEADERBOARD & FINAL RANKING
+           ========================================================================== */
+        function showFinalRankingScreen() {
+            document.getElementById('screen-gameplay').classList.add('hidden');
+            document.getElementById('game-stats-bar').classList.add('hidden');
+
+            let diffLabel = "Fácil";
+            if (gameState.difficulty === 'medium') diffLabel = "Médio";
+            if (gameState.difficulty === 'hard') diffLabel = "Difícil";
+
+            leaderboardData.push({
+                name: gameState.playerName,
+                difficulty: diffLabel,
+                score: gameState.totalScore,
+                timestamp: Date.now()
+            });
+
+            leaderboardData.sort((a, b) => b.score - a.score);
+
+            if (leaderboardData.length > 20) {
+                leaderboardData = leaderboardData.slice(0, 20);
+            }
+
+            let rankTitle = "Agente Iniciante";
+            if (gameState.totalScore >= 350) rankTitle = "Detetive Lendário da Geografia 🌟";
+            else if (gameState.totalScore >= 250) rankTitle = "Detetive Mestre 🔍";
+            else if (gameState.totalScore >= 150) rankTitle = "Investigador Sênior 🗺️";
+
+            document.getElementById('final-player-name').innerText = gameState.playerName;
+            document.getElementById('final-player-title').innerText = rankTitle;
+            document.getElementById('final-player-score').innerText = gameState.totalScore;
+
+            const container = document.getElementById('ranking-list-container');
+            container.innerHTML = '';
+
+            leaderboardData.forEach((player, index) => {
+                const pos = index + 1;
+                const isCurrentPlayer = player.name === gameState.playerName && player.score === gameState.totalScore;
+
+                let posBadge = `<span class="w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center">${pos}</span>`;
+                if (pos === 1) posBadge = `<span class="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center shadow"><i class="fa-solid fa-crown text-[10px]"></i></span>`;
+                if (pos === 2) posBadge = `<span class="w-6 h-6 rounded-full bg-slate-300 text-slate-900 font-extrabold text-xs flex items-center justify-center shadow">2</span>`;
+                if (pos === 3) posBadge = `<span class="w-6 h-6 rounded-full bg-amber-700 text-amber-100 font-extrabold text-xs flex items-center justify-center shadow">3</span>`;
+
+                const row = document.createElement('div');
+                row.className = `px-4 py-3 flex items-center justify-between text-xs transition ${isCurrentPlayer ? 'bg-amber-50 font-bold border-l-4 border-amber-500' : 'hover:bg-slate-50'}`;
+
+                row.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        ${posBadge}
+                        <span class="text-slate-900 font-medium ${isCurrentPlayer ? 'text-amber-800 font-bold' : ''}">
+                            ${player.name} ${isCurrentPlayer ? '<span class="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 ml-1">(Você)</span>' : ''}
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-8">
+                        <span class="text-slate-500 font-medium">${player.difficulty}</span>
+                        <span class="font-extrabold text-emerald-600 text-sm">${player.score} pts</span>
+                    </div>
+                `;
+
+                container.appendChild(row);
+            });
+
+            document.getElementById('screen-ranking').classList.remove('hidden');
+
+            if (gameState.totalScore >= 200 && typeof confetti === 'function') {
+                confetti({
+                    particleCount: 150,
+                    spread: 90,
+                    origin: { y: 0.5 }
+                });
+            }
+        }
+
+        function resetGameToStart() {
+            document.getElementById('screen-ranking').classList.add('hidden');
+            document.getElementById('screen-start').classList.remove('hidden');
+            document.getElementById('player-name-input').value = '';
+        }
+
+        /* ==========================================================================
+           9. MODAL CONTROLS
+           ========================================================================== */
+        function openImageModal() {
+            const img = document.getElementById('landmark-image');
+            document.getElementById('modal-zoomed-image').src = img.src;
+            document.getElementById('modal-image-zoom').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('modal-image-zoom').classList.add('hidden');
+        }
+
+        function openRulesModal() {
+            document.getElementById('modal-rules').classList.remove('hidden');
+        }
+
+        function closeRulesModal() {
+            document.getElementById('modal-rules').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
